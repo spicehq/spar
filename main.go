@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/logrusorgru/aurora"
-	"github.com/spiceai/sping/pkg/spar"
+	"github.com/spicehq/spar/pkg/spar"
 	"github.com/valyala/fasthttp"
 )
 
