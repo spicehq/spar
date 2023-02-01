@@ -44,7 +44,7 @@ func (p *SparClient) Throw() error {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	req.SetURI(p.uri)
-	req.Header.SetMethod("GET")
+	req.Header.SetMethod("POST")
 
 	randVal := rand.Intn(5)
 	if randVal > 2 {
