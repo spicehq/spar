@@ -1,4 +1,4 @@
-module github.com/spiceai/sping
+module github.com/spiceai/spar
 
 go 1.18
 
