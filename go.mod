@@ -1,4 +1,4 @@
-module github.com/spiceai/spar
+module github.com/spicehq/spar
 
 go 1.18
 
