@@ -1,18 +1,16 @@
 package spar
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"math/rand"
-	"net/http"
+	"log"
 	"runtime"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/logrusorgru/aurora"
+	"github.com/apache/arrow/go/v12/arrow/array"
 	"github.com/montanaflynn/stats"
-	"github.com/valyala/fasthttp"
+	"github.com/spiceai/gospice/v2"
 )
 
 type Spear struct {
@@ -21,73 +19,51 @@ type Spear struct {
 }
 
 type SparClient struct {
-	uri    *fasthttp.URI
-	client *fasthttp.Client
+	spiceClient *gospice.SpiceClient
 
 	durationsChan chan float64
 }
 
-func NewSparClient(uri *fasthttp.URI) *SparClient {
+func NewSparClient() *SparClient {
 	return &SparClient{
-		uri:           uri,
-		client:        &fasthttp.Client{},
+		spiceClient:   gospice.NewSpiceClient(),
 		durationsChan: make(chan float64, runtime.NumCPU()*100),
 	}
 }
 
-func (p *SparClient) Throw() error {
+func (p *SparClient) Init() error {
+	if err := p.spiceClient.Init("323337|b42eceab2e7c4a60a04ad57bebea830d"); err != nil {
+		return fmt.Errorf("failed to initialize spice client: %w", err)
+	}
+
+	return nil
+}
+
+func (p *SparClient) Close() {
+	if p.spiceClient != nil {
+		p.spiceClient.Close()
+	}
+}
+
+func (p *SparClient) Throw(ctx context.Context, sql string) error {
 	start := time.Now()
-
-	resp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseResponse(resp)
-
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-	req.SetURI(p.uri)
-	req.Header.SetMethod("POST")
-
-	randVal := rand.Intn(5)
-	if randVal > 2 {
-		randVal = 1
-	} else {
-		randVal = -1
+	reader, err := p.spiceClient.FireQuery(ctx, sql)
+	if err != nil {
+		return fmt.Errorf("failed to query spice: %w", err)
 	}
-
-	randTime := rand.Intn(20 * 1000)
-
-	spear := Spear{
-		Time:  time.Now().Add(-10 * time.Second).Add(time.Duration(randTime)),
-		Value: randVal,
-	}
-
-	if err := json.NewEncoder(req.BodyWriter()).Encode(spear); err != nil {
-		return err
-	}
-
-	if err := p.client.Do(req, resp); err != nil {
-		return err
-	}
-
-	statusCode := resp.StatusCode()
-	statusText := http.StatusText(statusCode)
-
-	var status aurora.Value
-	if statusCode >= 200 && statusCode < 300 {
-		status = aurora.BrightGreen(statusText)
-	} else if statusCode >= 400 && statusCode < 500 {
-		status = aurora.BrightYellow(statusText)
-	} else {
-		status = aurora.BrightRed(statusText)
-	}
-
 	duration := time.Since(start)
+	defer reader.Release()
+
+	rowCount := 0
+
+	for reader.Next() {
+		arr := array.RecordToStructArray(reader.Record())
+		rowCount += arr.Len()
+	}
+
+	log.Printf("Got %d rows in time=%s\n", rowCount, duration.Round(time.Microsecond))
+
 	p.durationsChan <- float64(duration)
-
-	body := resp.Body()
-	content := " " + strings.TrimSpace(strings.SplitN(string(body), "\n", 2)[0])
-	contentLength := len(body)
-
-	fmt.Printf("%s (%d bytes) from %s: time=%s%s\n", status, contentLength, aurora.BrightBlue(string(req.Host())), duration.Round(time.Microsecond), content)
 
 	return nil
 }
